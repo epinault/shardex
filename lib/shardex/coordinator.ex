@@ -93,9 +93,15 @@ defmodule Shardex.Coordinator do
   defp transition(_state, unchanged, unchanged, _up?), do: :ok
 
   defp transition(state, old, new, true = _up?) do
-    with :ok <- sync_pools(new, state) do
-      commit(state, new)
-      emit_changes(state.instance, old, new)
+    case sync_pools(new, state) do
+      :ok ->
+        commit(state, new)
+        emit_changes(state.instance, old, new)
+
+      {:error, _reason} = error ->
+        # Roll back pools that did start before the failure.
+        _ = sync_pools(old, state)
+        error
     end
   end
 

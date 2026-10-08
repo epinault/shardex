@@ -109,30 +109,55 @@ defmodule Shardex.MaintenanceTest do
   end
 
   # Review focus: the shard must never become routable before its pool exists.
-  test "activating a slow pool never exposes the shard before the pool exists", %{instance: i} do
+  test "activating a slow pool never exposes the shard before the pool is ready", %{instance: i} do
     slow = Module.concat(i, Slow)
+    test_pid = self()
 
     slow_pool =
       {Generic,
        child_spec: %{
          id: slow,
-         start: {Agent, :start_link, [fn -> Process.sleep(200) && :slow end, [name: slow]]}
+         start: {Agent, :start_link, [fn -> Process.sleep(200) && send(test_pid, :pool_ready) && :slow end, [name: slow]]}
        },
        ref: slow}
 
     start(i, shards: [s1: slow_pool])
     assert :ok = Shardex.maintenance(i, :s1, :stop)
 
-    parent = self()
-    spawn_link(fn -> poll_until_routable(i, slow, parent) end)
+    spawn_link(fn -> poll_until_routable(i, test_pid) end)
     assert :ok = Shardex.activate(i, :s1)
-    assert_receive {:routable, true}, 2000
+
+    first =
+      receive do
+        :pool_ready -> :pool_ready
+        {:routable, _} -> :routable
+      after
+        2000 -> :timeout
+      end
+
+    assert first == :pool_ready
+    assert_receive {:routable, _}, 2000
   end
 
-  defp poll_until_routable(i, pool_name, parent) do
+  @tag :capture_log
+  test "a failed activation rolls back pools it already started", %{instance: i} do
+    start(i,
+      start_failure: :stop_shard,
+      shards: [s1: [primary: agent_pool(i, :s1), replica: failing_pool(Module.concat(i, F))]]
+    )
+
+    assert {:ok, %{status: :stopped}} = Shardex.status(i, :s1)
+    refute alive?(agent_name(i, :s1))
+
+    assert {:error, _reason} = Shardex.activate(i, :s1)
+    assert {:ok, %{status: :stopped}} = Shardex.status(i, :s1)
+    refute alive?(agent_name(i, :s1))
+  end
+
+  defp poll_until_routable(i, parent) do
     case Shardex.lookup(i, "a") do
-      {:ok, _shard} -> send(parent, {:routable, Process.whereis(pool_name) != nil})
-      {:error, _reason} -> poll_until_routable(i, pool_name, parent)
+      {:ok, _shard} -> send(parent, {:routable, true})
+      {:error, _reason} -> poll_until_routable(i, parent)
     end
   end
 end
