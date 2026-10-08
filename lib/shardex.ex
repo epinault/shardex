@@ -5,7 +5,10 @@ defmodule Shardex do
   See the "Getting started" guide for an overview.
   """
 
+  alias Shardex.Coordinator
+  alias Shardex.Names
   alias Shardex.Router
+  alias Shardex.State
 
   @typedoc "Reason returned in `{:error, reason}` by the routing functions."
   @type reason ::
@@ -97,6 +100,57 @@ defmodule Shardex do
           {:ok, %{atom() => result}, [{term(), reason()}]}
         when result: term()
   def run_batch(instance, items, key_fun, fun, opts \\ []), do: Router.run_batch(instance, items, key_fun, fun, opts)
+
+  @doc """
+  Takes a shard (or one of its roles with `role:`) out of rotation.
+
+    * `:drain` - stop routing to it; pools keep running
+    * `:stop` - stop routing to it, then stop its pools
+
+  Idempotent. Hash strategies keep routing over the full shard list, so keys of a
+  shard in maintenance get `{:error, :maintenance}` rather than moving elsewhere.
+  """
+  @spec maintenance(instance(), atom(), :drain | :stop, keyword()) :: :ok | {:error, term()}
+  def maintenance(instance, shard, mode, opts \\ []) when mode in [:drain, :stop] do
+    target = if mode == :stop, do: :stopped, else: :drain
+    Coordinator.call(instance, {:set_status, shard, Keyword.get(opts, :role), target})
+  end
+
+  @doc """
+  Puts a shard (or one role with `role:`) back into rotation, starting pools
+  first. Without `role:`, every role of the shard becomes active. Idempotent.
+  """
+  @spec activate(instance(), atom(), keyword()) :: :ok | {:error, term()}
+  def activate(instance, shard, opts \\ []) do
+    Coordinator.call(instance, {:set_status, shard, Keyword.get(opts, :role), :active})
+  end
+
+  @doc "Returns the status of a shard and of each of its roles."
+  @spec status(instance(), atom()) ::
+          {:ok, %{status: Shardex.Shard.status(), roles: %{atom() => Shardex.Shard.status()}}}
+          | {:error, {:unknown_shard, atom()}}
+  def status(instance, shard) do
+    case State.fetch_shard(instance, shard) do
+      {:ok, shard} -> {:ok, %{status: shard.status, roles: Map.new(shard.roles, fn {r, p} -> {r, p.status} end)}}
+      :error -> {:error, {:unknown_shard, shard}}
+    end
+  end
+
+  @doc "Lists shards in configuration order. `meta.pids` maps each role to its pool pid (or `nil`)."
+  @spec shards(instance()) :: [Shardex.Shard.t()]
+  def shards(instance) do
+    topology = State.topology!(instance)
+
+    pids =
+      for {id, pid, _type, _mods} <- Supervisor.which_children(Names.pool_sup(instance)), is_pid(pid), into: %{} do
+        {id, pid}
+      end
+
+    for name <- topology.shards, {:ok, shard} <- [State.fetch_shard(instance, name)] do
+      role_pids = Map.new(shard.roles, fn {role, _pool} -> {role, Map.get(pids, {name, role})} end)
+      %{shard | meta: Map.put(shard.meta, :pids, role_pids)}
+    end
+  end
 
   @doc false
   @spec child_spec(keyword()) :: Supervisor.child_spec()

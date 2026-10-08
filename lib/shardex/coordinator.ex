@@ -30,7 +30,6 @@ defmodule Shardex.Coordinator do
   def init(config) do
     instance = config.name
     State.create_table(instance)
-    ## Boot helpers
     state = %{instance: instance, start_pools: config.start_pools, pool_sup: Names.pool_sup(instance)}
     {strategy, strategy_opts} = config.strategy
     names = Enum.map(config.shards, &elem(&1, 0))
@@ -55,6 +54,83 @@ defmodule Shardex.Coordinator do
     end
   end
 
+  @impl true
+  def handle_call({:set_status, name, role, target}, _from, state) do
+    reply =
+      with {:ok, shard} <- fetch(state.instance, name),
+           {:ok, updated} <- apply_status(shard, role, target) do
+        transition(state, shard, updated, target == :active)
+      end
+
+    {:reply, reply, state}
+  end
+
+  ## Status transitions
+
+  defp fetch(instance, name) do
+    case State.fetch_shard(instance, name) do
+      {:ok, shard} -> {:ok, shard}
+      :error -> {:error, {:unknown_shard, name}}
+    end
+  end
+
+  defp apply_status(shard, nil, :active) do
+    roles = Map.new(shard.roles, fn {role, pool} -> {role, %{pool | status: :active}} end)
+    {:ok, %{shard | status: :active, roles: roles}}
+  end
+
+  defp apply_status(shard, nil, target), do: {:ok, %{shard | status: target}}
+
+  defp apply_status(shard, role, target) do
+    case Map.fetch(shard.roles, role) do
+      {:ok, pool} -> {:ok, %{shard | roles: Map.put(shard.roles, role, %{pool | status: target})}}
+      :error -> {:error, {:unknown_role, role}}
+    end
+  end
+
+  # Becoming available: start pools first, then publish.
+  # Becoming unavailable: publish first, then stop pools.
+  defp transition(_state, unchanged, unchanged, _up?), do: :ok
+
+  defp transition(state, old, new, true = _up?) do
+    with :ok <- sync_pools(new, state) do
+      commit(state, new)
+      emit_changes(state.instance, old, new)
+    end
+  end
+
+  defp transition(state, old, new, false = _up?) do
+    commit(state, new)
+    emit_changes(state.instance, old, new)
+    sync_pools(new, state)
+  end
+
+  defp commit(state, shard) do
+    State.put_shard(state.instance, shard)
+    topology = State.topology!(state.instance)
+
+    State.put_topology(state.instance, %{
+      topology
+      | active: active_names(state.instance, topology.shards),
+        version: topology.version + 1
+    })
+  end
+
+  defp active_names(instance, names) do
+    Enum.filter(names, &match?({:ok, %Shard{status: :active}}, State.fetch_shard(instance, &1)))
+  end
+
+  defp emit_changes(instance, old, new) do
+    if old.status != new.status, do: emit_status(instance, new.name, nil, old.status, new.status)
+
+    Enum.each(new.roles, fn {role, pool} ->
+      old_status = Map.fetch!(old.roles, role).status
+      if old_status != pool.status, do: emit_status(instance, new.name, role, old_status, pool.status)
+    end)
+  end
+
+  ## Boot helpers
+
   defp build_shard(instance, name, roles) do
     Enum.reduce_while(roles, {:ok, %Shard{name: name}}, fn {role, spec}, {:ok, shard} ->
       case Adapter.build_pool(instance, name, role, spec) do
@@ -74,9 +150,6 @@ defmodule Shardex.Coordinator do
           "[Shardex] #{inspect(state.instance)} could not start shard #{inspect(shard.name)} " <>
             "(#{inspect(reason)}); it boots as :stopped"
         )
-
-        ## Pool lifecycle
-        # Invariant: a pool runs iff shard.status != :stopped and pool.status != :stopped.
 
         stopped = %{shard | status: :stopped}
         :ok = sync_pools(stopped, state)
@@ -99,6 +172,9 @@ defmodule Shardex.Coordinator do
 
     :ok
   end
+
+  ## Pool lifecycle
+  # Invariant: a pool runs iff shard.status != :stopped and pool.status != :stopped.
 
   defp sync_pools(_shard, %{start_pools: false}), do: :ok
 
