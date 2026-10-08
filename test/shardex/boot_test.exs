@@ -17,7 +17,11 @@ defmodule Shardex.BootTest do
   test "boots, starts one pool per {shard, role} and writes the topology", %{instance: i} do
     start_supervised!(
       {Shardex,
-       name: i, shards: [s1: [primary: agent_pool(i, :s1), replica: agent_pool(i, :s1, :replica)], s2: agent_pool(i, :s2)]}
+       name: i,
+       shards: [
+         s1: [primary: agent_pool(i, :s1), replica: agent_pool(i, :s1, :replica)],
+         s2: agent_pool(i, :s2)
+       ]}
     )
 
     topology = State.topology!(i)

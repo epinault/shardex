@@ -30,19 +30,21 @@ if Code.ensure_loaded?(Ecto.Repo) do
     def init(opts, %{instance: instance, shard: shard, role: role}) do
       with {:ok, repo} <- fetch_repo(opts) do
         start? = Keyword.get(opts, :start, true)
-
-        case Keyword.fetch(opts, :config) do
-          {:ok, config} ->
-            name = Shardex.Names.pool(instance, shard, role)
-            spec = if start?, do: {repo, Keyword.put(config, :name, name)}
-
-            {:ok, %{state: {:dynamic, repo, name}, ref: name, child_spec: spec, meta: %{repo: repo, dynamic_name: name}}}
-
-          :error ->
-            spec = if start?, do: repo
-            {:ok, %{state: {:module, repo}, ref: repo, child_spec: spec, meta: %{repo: repo, dynamic_name: nil}}}
-        end
+        name = Shardex.Names.pool(instance, shard, role)
+        {:ok, build(repo, Keyword.fetch(opts, :config), name, start?)}
       end
+    end
+
+    defp build(repo, {:ok, config}, name, start?) do
+      spec = if start?, do: {repo, Keyword.put(config, :name, name)}
+      meta = %{repo: repo, dynamic_name: name}
+      %{state: {:dynamic, repo, name}, ref: name, child_spec: spec, meta: meta}
+    end
+
+    defp build(repo, :error, _name, start?) do
+      spec = if start?, do: repo
+      meta = %{repo: repo, dynamic_name: nil}
+      %{state: {:module, repo}, ref: repo, child_spec: spec, meta: meta}
     end
 
     @impl true

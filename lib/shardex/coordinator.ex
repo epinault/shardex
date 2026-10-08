@@ -240,7 +240,8 @@ defmodule Shardex.Coordinator do
   end
 
   defp emit_status(instance, shard, role, from, to) do
-    Telemetry.execute([:shard, :status_changed], %{}, %{instance: instance, shard: shard, role: role, from: from, to: to})
+    meta = %{instance: instance, shard: shard, role: role, from: from, to: to}
+    Telemetry.execute([:shard, :status_changed], %{}, meta)
   end
 
   defp map_ok(enum, fun) do
