@@ -9,6 +9,7 @@ defmodule Shardex do
   alias Shardex.Names
   alias Shardex.Router
   alias Shardex.State
+  alias Shardex.Strategy.Cached
 
   @typedoc "Reason returned in `{:error, reason}` by the routing functions."
   @type reason ::
@@ -180,4 +181,16 @@ defmodule Shardex do
   @doc "Removes a shard at runtime: unroutes it, stops its pools and drops it from the strategy."
   @spec remove_shard(instance(), atom()) :: :ok | {:error, {:unknown_shard, atom()} | :last_shard}
   def remove_shard(instance, name), do: Coordinator.call(instance, {:remove_shard, name})
+
+  @doc """
+  Drops a cached routing entry (or `:all`) when the instance uses
+  `Shardex.Strategy.Cached`. Returns `{:error, :not_cached}` otherwise.
+  """
+  @spec invalidate(instance(), term()) :: :ok | {:error, :not_cached}
+  def invalidate(instance, key) do
+    case State.topology!(instance) do
+      %{strategy: Cached, strategy_state: state} -> Cached.invalidate(state, key)
+      _topology -> {:error, :not_cached}
+    end
+  end
 end
