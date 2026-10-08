@@ -20,7 +20,10 @@ in flight are not tracked: `:stop` relies on the pool's own shutdown.
 
 ```elixir
 MyApp.Shards.add_shard(:shard_9, primary: {Shardex.Adapter.Ecto, repo: MyApp.Repo, config: [database: "s9"]})
-MyApp.Shards.add_shard(:shard_10, spec, status: :drain)    # warm up first
+# warm up first: pools start, but the shard is not routed until activate/1
+MyApp.Shards.add_shard(:shard_10, {Shardex.Adapter.Ecto, repo: MyApp.Repo, config: [database: "s10"]},
+  status: :drain
+)
 MyApp.Shards.remove_shard(:shard_9)
 ```
 

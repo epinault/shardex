@@ -186,7 +186,14 @@ defmodule Shardex do
 
   @doc """
   Adds a shard at runtime: initializes its adapters, starts its pools, then
-  makes it routable (or leaves it drained with `status: :drain`).
+  makes it routable. With `status: :drain` the pools are started too but the
+  shard is not routed until `activate/3`. Pools are not started when the
+  instance runs with `start_pools: false`.
+
+  Returns `{:error, :already_exists}`, `{:error, {:invalid_shard_spec, message}}`,
+  `{:error, {:adapter_init_failed, shard, role, reason}}`,
+  `{:error, {:strategy_error, term}}` or a pool start error; on error nothing
+  is added.
 
   Runtime changes are kept in memory only; after a restart the boot config wins.
   With `Shardex.Strategy.Hash` most keys remap; with `JumpHash` ~1/n keys move
@@ -203,8 +210,14 @@ defmodule Shardex do
     Coordinator.call(instance, {:add_shard, name, spec, status})
   end
 
-  @doc "Removes a shard at runtime: unroutes it, stops its pools and drops it from the strategy."
-  @spec remove_shard(instance(), atom()) :: :ok | {:error, {:unknown_shard, atom()} | :last_shard}
+  @doc """
+  Removes a shard at runtime: unroutes it, stops its pools and drops it from the strategy.
+
+  Returns `{:error, {:strategy_error, term}}`, with nothing changed, when the
+  strategy's `on_topology_change/2` raises or does not return `{:ok, state}`.
+  """
+  @spec remove_shard(instance(), atom()) ::
+          :ok | {:error, {:unknown_shard, atom()} | :last_shard | {:strategy_error, term()}}
   def remove_shard(instance, name), do: Coordinator.call(instance, {:remove_shard, name})
 
   @doc """

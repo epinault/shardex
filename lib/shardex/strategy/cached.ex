@@ -15,6 +15,12 @@ defmodule Shardex.Strategy.Cached do
   The cache is cleared on `add_shard`/`remove_shard`; use `Shardex.invalidate/2`
   when an assignment changes.
 
+  Call `Shardex.invalidate/2` only after the new assignment is visible to the
+  inner strategy. Invalidation is not atomic with lookups: a lookup that missed
+  the cache concurrently can re-cache the old value after `invalidate/2`, where
+  it stays until `:ttl` expires. Choose `:ttl` to bound how long a stale route
+  is acceptable.
+
   Expired entries are only replaced when their key is looked up again, so
   memory grows with the number of distinct keys routed. If that matters, use a
   bounded key space, or a finite `:ttl` plus a periodic `Shardex.invalidate(instance, :all)`.

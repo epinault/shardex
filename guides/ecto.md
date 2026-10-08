@@ -39,6 +39,9 @@ def call(conn, _opts) do
 
     {:error, :maintenance} ->
       conn |> send_resp(503, "maintenance") |> halt()
+
+    {:error, _reason} ->
+      conn |> send_resp(500, "no shard for this organization") |> halt()
   end
 end
 ```
@@ -57,6 +60,12 @@ shards: [
 ```
 
 The ref is the module, and `run/3` simply calls `fun.(MyApp.RepoShard1)`.
+
+Shardex starts each repo module under its own supervisor. If your application
+already starts the repo (e.g. it is in your supervision tree), pass
+`start: false`. Otherwise Shardex finds the repo's name already registered,
+treats that process as its pool and routes to it, but does not own it:
+`maintenance(shard, :stop)` will not stop it.
 
 ## Repos started elsewhere
 

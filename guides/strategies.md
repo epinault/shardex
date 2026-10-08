@@ -46,4 +46,10 @@ Optional callbacks: `init/2` (build state, runs in the Coordinator),
 
 A function works too: `strategy: fn key, ctx -> {:ok, hd(ctx.shards)} end`.
 
-When an assignment changes, call `MyApp.Shards.invalidate(org_id)`.
+When an assignment changes, call `MyApp.Shards.invalidate(org_id)` **after**
+the change is visible to the inner strategy (e.g. after the directory
+transaction commits). Invalidation is not atomic with lookups: a lookup that
+missed the cache and queried the inner strategy just before the change can
+write the old assignment back after `invalidate`, and it stays cached until
+`:ttl` expires. Pick a `:ttl` that bounds how long a stale route is
+acceptable, or move keys only while their shard is drained.
