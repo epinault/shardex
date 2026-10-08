@@ -73,6 +73,9 @@ defmodule Shardex.TopologyTest do
     assert Shardex.add_shard(i, :s1, agent_pool(i, :s1)) == {:error, :already_exists}
     assert {:error, {:invalid_shard_spec, _message}} = Shardex.add_shard(i, :s3, :nope)
 
+    assert {:error, {:invalid_shard_spec, "duplicate role names" <> _rest}} =
+             Shardex.add_shard(i, :s3, primary: agent_pool(i, :s3), primary: agent_pool(i, :s3))
+
     assert Shardex.add_shard(i, :s3, {Generic, []}) ==
              {:error, {:adapter_init_failed, :s3, :primary, {:missing_option, :ref}}}
 

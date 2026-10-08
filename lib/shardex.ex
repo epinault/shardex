@@ -117,7 +117,10 @@ defmodule Shardex do
     * `:on_error` - `:collect` (default) or `:raise` (raise `Shardex.BatchError`
       before running anything if any item cannot be routed)
     * `:max_concurrency` - run up to N shard groups in parallel tasks (default 1)
-    * `:timeout` - per-group timeout when `max_concurrency > 1` (default `:infinity`)
+    * `:timeout` - per-group timeout in milliseconds when `max_concurrency > 1`
+      (default `:infinity`)
+
+  Invalid option values raise `ArgumentError` before any routing happens.
   """
   @spec run_batch(instance(), Enumerable.t(), (term() -> term()), (term(), [term()] -> result), keyword()) ::
           {:ok, %{atom() => result}, [{term(), reason()}]}

@@ -94,6 +94,26 @@ defmodule Shardex.BatchTest do
     refute_received :ran
   end
 
+  test "run_batch validates its options before routing", %{instance: i} do
+    start(i, strategy: {RecordingStrategy, pid: self()})
+    attach_telemetry([[:shardex, :batch, :stop]])
+
+    for {opts, message} <- [
+          {[on_error: :ignore], ~r/:on_error/},
+          {[max_concurrency: 0], ~r/:max_concurrency/},
+          {[max_concurrency: :many], ~r/:max_concurrency/},
+          {[timeout: 0], ~r/:timeout/},
+          {[timeout: "5s"], ~r/:timeout/}
+        ] do
+      assert_raise ArgumentError, message, fn ->
+        Shardex.run_batch(i, @items, & &1.k, fn _ref, items -> items end, opts)
+      end
+    end
+
+    refute_received {:route_many, _keys}
+    refute_received {:telemetry, [:shardex, :batch, :stop], _measurements, _meta}
+  end
+
   test "max_concurrency runs groups in separate processes", %{instance: i} do
     start(i)
     test_pid = self()

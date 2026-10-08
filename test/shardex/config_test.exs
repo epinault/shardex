@@ -41,7 +41,9 @@ defmodule Shardex.ConfigTest do
           [name: :i, shards: [s1: @pool, s1: @pool]],
           [name: :i, shards: [s1: @pool], strategy: String],
           [name: :i, shards: [s1: @pool], start_failure: :explode],
-          [name: :i, shards: [s1: @pool], unknown: true]
+          [name: :i, shards: [s1: @pool], unknown: true],
+          [name: nil, shards: [s1: @pool]],
+          [name: :i, shards: [s1: [primary: @pool, primary: @pool]]]
         ] do
       assert_raise NimbleOptions.ValidationError, fn -> Config.validate!(opts) end
     end
@@ -51,5 +53,8 @@ defmodule Shardex.ConfigTest do
     assert Config.normalize_roles(:s1, @pool) == {:ok, [primary: @pool]}
     assert {:error, message} = Config.normalize_roles(:s1, [])
     assert message =~ ":s1"
+
+    assert Config.normalize_roles(:s1, primary: @pool, replica: @pool, primary: @pool) ==
+             {:error, "duplicate role names for shard :s1: [:primary]"}
   end
 end

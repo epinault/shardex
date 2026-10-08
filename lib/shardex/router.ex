@@ -81,12 +81,11 @@ defmodule Shardex.Router do
           {:ok, %{atom() => result}, [{term(), Shardex.reason()}]}
         when result: term()
   def run_batch(instance, items, key_fun, fun, opts) do
+    {on_error, max_concurrency, timeout} = batch_opts!(opts)
     batch = group(instance, items, key_fun, opts)
 
-    case Keyword.get(opts, :on_error, :collect) do
-      :raise when batch.errors != [] -> raise BatchError, errors: batch.errors, instance: instance
-      mode when mode in [:collect, :raise] -> :ok
-      other -> raise ArgumentError, "expected :on_error to be :collect or :raise, got: #{inspect(other)}"
+    if on_error == :raise and batch.errors != [] do
+      raise BatchError, errors: batch.errors, instance: instance
     end
 
     run_group = fn {name, %{shard: shard, pool: pool, items: group_items}} ->
@@ -94,21 +93,35 @@ defmodule Shardex.Router do
     end
 
     results =
-      case Keyword.get(opts, :max_concurrency, 1) do
-        1 ->
-          Enum.map(batch.groups, run_group)
-
-        n when is_integer(n) and n > 1 ->
-          batch.groups
-          |> Task.async_stream(run_group,
-            max_concurrency: n,
-            ordered: false,
-            timeout: Keyword.get(opts, :timeout, :infinity)
-          )
-          |> Enum.map(fn {:ok, result} -> result end)
+      if max_concurrency == 1 do
+        Enum.map(batch.groups, run_group)
+      else
+        batch.groups
+        |> Task.async_stream(run_group, max_concurrency: max_concurrency, ordered: false, timeout: timeout)
+        |> Enum.map(fn {:ok, result} -> result end)
       end
 
     {:ok, Map.new(results), batch.errors}
+  end
+
+  defp batch_opts!(opts) do
+    on_error = Keyword.get(opts, :on_error, :collect)
+    max_concurrency = Keyword.get(opts, :max_concurrency, 1)
+    timeout = Keyword.get(opts, :timeout, :infinity)
+
+    if on_error not in [:collect, :raise] do
+      raise ArgumentError, "expected :on_error to be :collect or :raise, got: #{inspect(on_error)}"
+    end
+
+    if not (is_integer(max_concurrency) and max_concurrency > 0) do
+      raise ArgumentError, "expected :max_concurrency to be a positive integer, got: #{inspect(max_concurrency)}"
+    end
+
+    if not ((is_integer(timeout) and timeout > 0) or timeout == :infinity) do
+      raise ArgumentError, "expected :timeout to be a positive integer or :infinity, got: #{inspect(timeout)}"
+    end
+
+    {on_error, max_concurrency, timeout}
   end
 
   @doc false

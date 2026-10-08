@@ -2,7 +2,11 @@ defmodule Shardex.Config do
   @moduledoc false
 
   @schema NimbleOptions.new!(
-            name: [type: :atom, required: true, doc: "Instance name (set automatically by `use Shardex`)."],
+            name: [
+              type: {:custom, __MODULE__, :validate_name, []},
+              required: true,
+              doc: "Instance name, a non-nil atom (set automatically by `use Shardex`)."
+            ],
             shards: [
               type: {:custom, __MODULE__, :validate_shards, []},
               required: true,
@@ -28,6 +32,10 @@ defmodule Shardex.Config do
   def validate!(opts), do: opts |> NimbleOptions.validate!(@schema) |> Map.new()
 
   @doc false
+  def validate_name(name) when is_atom(name) and name not in [nil, true, false], do: {:ok, name}
+  def validate_name(other), do: {:error, "expected :name to be a non-nil atom, got: #{inspect(other)}"}
+
+  @doc false
   def validate_shards([_ | _] = shards) do
     with :ok <- check_keyword(shards),
          :ok <- check_unique(Keyword.keys(shards)) do
@@ -44,10 +52,12 @@ defmodule Shardex.Config do
   def normalize_roles(_shard, {adapter, opts} = spec) when is_atom(adapter) and is_list(opts), do: {:ok, [primary: spec]}
 
   def normalize_roles(shard, [_ | _] = roles) do
-    if Keyword.keyword?(roles) and Enum.all?(roles, fn {_role, spec} -> pool_spec?(spec) end) do
+    with :ok <- check_role_specs(shard, roles),
+         [] <- duplicates(Keyword.keys(roles)) do
       {:ok, roles}
     else
-      {:error, invalid_spec_message(shard, roles)}
+      {:error, _message} = error -> error
+      dups -> {:error, "duplicate role names for shard #{inspect(shard)}: #{inspect(dups)}"}
     end
   end
 
@@ -67,16 +77,24 @@ defmodule Shardex.Config do
     end
   end
 
+  defp check_role_specs(shard, roles) do
+    if Keyword.keyword?(roles) and Enum.all?(roles, fn {_role, spec} -> pool_spec?(spec) end),
+      do: :ok,
+      else: {:error, invalid_spec_message(shard, roles)}
+  end
+
   defp check_keyword(shards) do
     if Keyword.keyword?(shards), do: :ok, else: {:error, "expected :shards to be a keyword list, got: #{inspect(shards)}"}
   end
 
   defp check_unique(names) do
-    case names -- Enum.uniq(names) do
+    case duplicates(names) do
       [] -> :ok
-      dups -> {:error, "duplicate shard names in :shards: #{inspect(Enum.uniq(dups))}"}
+      dups -> {:error, "duplicate shard names in :shards: #{inspect(dups)}"}
     end
   end
+
+  defp duplicates(names), do: Enum.uniq(names -- Enum.uniq(names))
 
   defp pool_spec?({adapter, opts}) when is_atom(adapter) and is_list(opts), do: true
   defp pool_spec?(_other), do: false
