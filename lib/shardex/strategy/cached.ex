@@ -14,6 +14,10 @@ defmodule Shardex.Strategy.Cached do
   Only cache misses reach the inner strategy, in one `route_many/2` call.
   The cache is cleared on `add_shard`/`remove_shard`; use `Shardex.invalidate/2`
   when an assignment changes.
+
+  Expired entries are only replaced when their key is looked up again, so
+  memory grows with the number of distinct keys routed. If that matters, use a
+  bounded key space, or a finite `:ttl` plus a periodic `Shardex.invalidate(instance, :all)`.
   """
 
   @behaviour Shardex.Strategy

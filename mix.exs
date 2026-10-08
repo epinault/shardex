@@ -58,7 +58,20 @@ defmodule Shardex.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      extras: ["README.md", "CHANGELOG.md" | Path.wildcard("guides/*.md")],
+      extras: [
+        "README.md",
+        "guides/getting-started.md",
+        "guides/ecto.md",
+        "guides/redis.md",
+        "guides/elasticsearch.md",
+        "guides/strategies.md",
+        "guides/batching.md",
+        "guides/maintenance.md",
+        "guides/telemetry.md",
+        "guides/migrating-from-shardlib.md",
+        "CHANGELOG.md"
+      ],
+      groups_for_extras: [Guides: ~r/guides\//],
       groups_for_modules: [
         Strategies: [~r/Shardex\.Strategy/],
         Adapters: [~r/Shardex\.Adapter/]
