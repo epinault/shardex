@@ -72,6 +72,32 @@ defmodule Shardex do
   @spec run!(instance(), term(), (term() -> result), keyword()) :: result when result: term()
   def run!(instance, key, fun, opts \\ []), do: Router.run!(instance, key, fun, opts)
 
+  @doc """
+  Groups items by the shard their key routes to, calling the strategy once with
+  the deduplicated keys. Every item ends up exactly once in either a group or
+  `errors`. Accepts `:role` and `:fallback` like `ref/3`; items whose shard has
+  no usable role go to `errors`.
+  """
+  @spec group(instance(), Enumerable.t(), (term() -> term()), keyword()) :: Shardex.Batch.t()
+  def group(instance, items, key_fun, opts \\ []), do: Router.group(instance, items, key_fun, opts)
+
+  @doc """
+  Groups items (see `group/4`) and calls `fun.(ref, items)` once per shard,
+  inside the adapter's context. Returns `{:ok, %{shard => result}, errors}`.
+
+  ## Options
+
+    * `:role`, `:fallback` - as in `ref/3`
+    * `:on_error` - `:collect` (default) or `:raise` (raise `Shardex.BatchError`
+      before running anything if any item cannot be routed)
+    * `:max_concurrency` - run up to N shard groups in parallel tasks (default 1)
+    * `:timeout` - per-group timeout when `max_concurrency > 1` (default `:infinity`)
+  """
+  @spec run_batch(instance(), Enumerable.t(), (term() -> term()), (term(), [term()] -> result), keyword()) ::
+          {:ok, %{atom() => result}, [{term(), reason()}]}
+        when result: term()
+  def run_batch(instance, items, key_fun, fun, opts \\ []), do: Router.run_batch(instance, items, key_fun, fun, opts)
+
   @doc false
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
