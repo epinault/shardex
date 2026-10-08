@@ -39,16 +39,20 @@ defmodule Shardex.Adapter do
     ctx = %{instance: instance, shard: shard, role: role}
 
     with :ok <- ensure_adapter(adapter),
-         {:ok, %{state: state, ref: ref} = result} <- adapter.init(opts, ctx) do
+         {:ok, %{state: state, ref: ref} = result} <- safe(fn -> adapter.init(opts, ctx) end),
+         {:ok, child_spec} <- safe(fn -> {:ok, child_spec(Map.get(result, :child_spec), shard, role)} end) do
       {:ok,
        %Pool{
          role: role,
          adapter: adapter,
          adapter_state: state,
          ref: ref,
-         child_spec: child_spec(Map.get(result, :child_spec), shard, role),
+         child_spec: child_spec,
          meta: Map.get(result, :meta, %{})
        }}
+    else
+      {:error, _reason} = error -> error
+      other -> {:error, {:invalid_init_result, other}}
     end
   end
 
@@ -62,6 +66,14 @@ defmodule Shardex.Adapter do
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :init, 2),
       do: :ok,
       else: {:error, {:invalid_adapter, adapter}}
+  end
+
+  # Adapter init and child-spec normalization run user-supplied input inside
+  # the Coordinator: exceptions become errors instead of crashing it.
+  defp safe(fun) do
+    fun.()
+  rescue
+    exception -> {:error, {:exception, exception}}
   end
 
   defp child_spec(nil, _shard, _role), do: nil

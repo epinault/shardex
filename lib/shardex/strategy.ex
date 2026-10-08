@@ -72,8 +72,9 @@ defmodule Shardex.Strategy do
   @spec route_many(module(), [term()], ctx()) :: map()
   def route_many(mod, keys, ctx), do: mod.route_many(keys, ctx)
 
+  # Returns whatever the strategy returns; the Coordinator validates it.
   @doc false
-  @spec on_topology_change(module(), term(), keyword(), [atom()]) :: {:ok, term()}
+  @spec on_topology_change(module(), term(), keyword(), [atom()]) :: term()
   def on_topology_change(mod, state, opts, shards) do
     if exports?(mod, :on_topology_change, 2),
       do: mod.on_topology_change(state, shards),

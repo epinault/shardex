@@ -88,4 +88,16 @@ defmodule Shardex.Adapter.EctoTest do
   test "a missing :repo is an init error" do
     assert Adapter.build_pool(:i, :s1, :primary, {Shardex.Adapter.Ecto, []}) == {:error, {:missing_option, :repo}}
   end
+
+  test "invalid :repo and :config options are init errors" do
+    for repo <- [nil, true, false, "Repo", NoSuchRepo] do
+      assert Adapter.build_pool(:i, :s1, :primary, {Shardex.Adapter.Ecto, repo: repo}) ==
+               {:error, {:invalid_option, :repo, repo}}
+    end
+
+    for config <- ["not a keyword", [:database], %{database: "x"}] do
+      assert Adapter.build_pool(:i, :s1, :primary, {Shardex.Adapter.Ecto, repo: SqliteRepo, config: config}) ==
+               {:error, {:invalid_option, :config, config}}
+    end
+  end
 end

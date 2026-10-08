@@ -8,6 +8,22 @@ defmodule Shardex.TopologyTest do
   alias Shardex.Names
   alias Shardex.State
 
+  defmodule NopeAdapter do
+    @moduledoc false
+    def init(_opts, _ctx), do: :nope
+  end
+
+  defmodule RaisingTopologyStrategy do
+    @moduledoc false
+    @behaviour Shardex.Strategy
+
+    @impl true
+    def route_many(keys, %{shards: [first | _]}), do: Map.new(keys, &{&1, {:ok, first}})
+
+    @impl true
+    def on_topology_change(_state, _shards), do: raise("boom")
+  end
+
   setup do
     {:ok, instance: unique_instance()}
   end
@@ -67,6 +83,49 @@ defmodule Shardex.TopologyTest do
     assert Shardex.status(i, :s3) == {:error, {:unknown_shard, :s3}}
     refute Process.whereis(agent_name(i, :s3))
     assert State.topology!(i).shards == [:s1, :s2]
+  end
+
+  @tag :capture_log
+  test "bad add_shard input returns errors without restarting the coordinator", %{instance: i} do
+    start(i)
+    :ok = Shardex.maintenance(i, :s2, :drain)
+    coordinator = Process.whereis(Names.coordinator(i))
+
+    bad_specs = [
+      {Generic, child_spec: {NoSuchModule, []}, ref: :x},
+      {Generic, child_spec: :not_a_spec, ref: :x},
+      {Generic, ref: :x, run: :not_a_fun},
+      {NopeAdapter, []},
+      {Shardex.Adapter.Ecto, repo: Shardex.Test.SqliteRepo, config: "not a keyword"},
+      {Shardex.Adapter.Ecto, repo: nil}
+    ]
+
+    for spec <- bad_specs do
+      assert {:error, {:adapter_init_failed, :s3, :primary, _reason}} = Shardex.add_shard(i, :s3, spec)
+    end
+
+    assert Process.whereis(Names.coordinator(i)) == coordinator
+    assert {:ok, %{status: :drain}} = Shardex.status(i, :s2)
+    assert Shardex.status(i, :s3) == {:error, {:unknown_shard, :s3}}
+  end
+
+  test "a strategy failing on topology change aborts add_shard and remove_shard", %{instance: i} do
+    start(i, strategy: RaisingTopologyStrategy)
+    coordinator = Process.whereis(Names.coordinator(i))
+
+    assert {:error, {:strategy_error, %RuntimeError{message: "boom"}}} =
+             Shardex.add_shard(i, :s3, agent_pool(i, :s3))
+
+    assert Shardex.status(i, :s3) == {:error, {:unknown_shard, :s3}}
+    refute Process.whereis(agent_name(i, :s3))
+    assert State.topology!(i).shards == [:s1, :s2]
+
+    assert {:error, {:strategy_error, %RuntimeError{}}} = Shardex.remove_shard(i, :s2)
+    assert {:ok, %{status: :active}} = Shardex.status(i, :s2)
+    assert is_pid(Process.whereis(agent_name(i, :s2)))
+    assert State.topology!(i).shards == [:s1, :s2]
+    assert State.topology!(i).active == [:s1, :s2]
+    assert Process.whereis(Names.coordinator(i)) == coordinator
   end
 
   test "remove_shard stops pools and unroutes the shard", %{instance: i} do

@@ -148,6 +148,7 @@ defmodule Shardex.Coordinator do
 
   ## Boot helpers
 
+  # Adapter.build_pool/4 never raises and always returns {:ok, _} | {:error, _}.
   defp build_shard(instance, name, roles) do
     Enum.reduce_while(roles, {:ok, %Shard{name: name}}, fn {role, spec}, {:ok, shard} ->
       case Adapter.build_pool(instance, name, role, spec) do
@@ -260,25 +261,38 @@ defmodule Shardex.Coordinator do
 
   ## Topology changes
 
+  # The new strategy state is computed before any side effect, so a failing
+  # strategy aborts the change with nothing started, inserted or removed.
   defp add_shard(state, name, spec, status) do
+    topology = State.topology!(state.instance)
+    names = topology.shards ++ [name]
+
     with :ok <- ensure_new(state.instance, name),
          {:ok, roles} <- normalize_roles(name, spec),
          {:ok, shard} <- build_shard(state.instance, name, roles),
          shard = %{shard | status: status},
+         {:ok, strategy_state} <- strategy_change(topology, names),
          :ok <- start_new_shard(shard, state) do
       State.put_shard(state.instance, shard)
-      change_shard_list(state, &(&1 ++ [name]), :add, name)
+      publish_shard_list(state, names, strategy_state, :add, name)
     end
   end
 
+  # Unroute and stop pools, publish the shard list without the shard, then
+  # delete its record: readers see :maintenance, then {:unknown_shard, _}.
   defp remove_shard(state, name) do
+    topology = State.topology!(state.instance)
+    names = List.delete(topology.shards, name)
+
     with {:ok, shard} <- fetch(state.instance, name),
-         :ok <- ensure_not_last(State.topology!(state.instance), name) do
+         :ok <- ensure_not_last(topology, name),
+         {:ok, strategy_state} <- strategy_change(topology, names) do
       stopped = %{shard | status: :stopped}
       commit(state, stopped)
       :ok = sync_pools(stopped, state)
+      :ok = publish_shard_list(state, names, strategy_state, :remove, name)
       State.delete_shard(state.instance, name)
-      change_shard_list(state, &List.delete(&1, name), :remove, name)
+      :ok
     end
   end
 
@@ -310,13 +324,17 @@ defmodule Shardex.Coordinator do
     end
   end
 
-  defp change_shard_list(state, update, action, name) do
+  defp strategy_change(topology, names) do
+    case Strategy.on_topology_change(topology.strategy, topology.strategy_state, topology.strategy_opts, names) do
+      {:ok, strategy_state} -> {:ok, strategy_state}
+      other -> {:error, {:strategy_error, other}}
+    end
+  rescue
+    exception -> {:error, {:strategy_error, exception}}
+  end
+
+  defp publish_shard_list(state, names, strategy_state, action, name) do
     topology = State.topology!(state.instance)
-    names = update.(topology.shards)
-
-    {:ok, strategy_state} =
-      Strategy.on_topology_change(topology.strategy, topology.strategy_state, topology.strategy_opts, names)
-
     version = topology.version + 1
 
     State.put_topology(state.instance, %{

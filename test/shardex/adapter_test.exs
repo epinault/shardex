@@ -31,6 +31,32 @@ defmodule Shardex.AdapterTest do
     assert {:error, {:invalid_adapter, String}} = Adapter.build_pool(:inst, :s1, :primary, {String, []})
   end
 
+  defmodule NopeAdapter do
+    @moduledoc false
+    def init(_opts, _ctx), do: :nope
+  end
+
+  defmodule RaisingAdapter do
+    @moduledoc false
+    def init(_opts, _ctx), do: raise("init boom")
+  end
+
+  test "build_pool/4 turns bad init results and exceptions into errors" do
+    assert {:error, {:invalid_init_result, :nope}} = Adapter.build_pool(:inst, :s1, :primary, {NopeAdapter, []})
+
+    assert {:error, {:exception, %RuntimeError{message: "init boom"}}} =
+             Adapter.build_pool(:inst, :s1, :primary, {RaisingAdapter, []})
+
+    assert {:error, {:exception, %ArgumentError{}}} =
+             Adapter.build_pool(:inst, :s1, :primary, {Generic, child_spec: {NoSuchModule, []}, ref: :x})
+  end
+
+  test "Generic rejects an invalid :run option" do
+    for run <- [:nope, fn -> :ok end, {Wrapper, :run, :not_a_list}] do
+      assert {:error, {:invalid_option, :run}} = Adapter.build_pool(:inst, :s1, :primary, {Generic, ref: :r, run: run})
+    end
+  end
+
   test "run/2 defaults to calling fun with the ref" do
     {:ok, pool} = Adapter.build_pool(:inst, :s1, :primary, {Generic, ref: :r})
     assert Adapter.run(pool, &{:got, &1}) == {:got, :r}

@@ -28,20 +28,21 @@ if Code.ensure_loaded?(Ecto.Repo) do
 
     @impl true
     def init(opts, %{instance: instance, shard: shard, role: role}) do
-      with {:ok, repo} <- fetch_repo(opts) do
+      with {:ok, repo} <- fetch_repo(opts),
+           {:ok, mode} <- fetch_mode(opts) do
         start? = Keyword.get(opts, :start, true)
         name = Shardex.Names.pool(instance, shard, role)
-        {:ok, build(repo, Keyword.fetch(opts, :config), name, start?)}
+        {:ok, build(repo, mode, name, start?)}
       end
     end
 
-    defp build(repo, {:ok, config}, name, start?) do
+    defp build(repo, {:dynamic, config}, name, start?) do
       spec = if start?, do: {repo, Keyword.put(config, :name, name)}
       meta = %{repo: repo, dynamic_name: name}
       %{state: {:dynamic, repo, name}, ref: name, child_spec: spec, meta: meta}
     end
 
-    defp build(repo, :error, _name, start?) do
+    defp build(repo, :module, _name, start?) do
       spec = if start?, do: repo
       meta = %{repo: repo, dynamic_name: nil}
       %{state: {:module, repo}, ref: repo, child_spec: spec, meta: meta}
@@ -63,8 +64,25 @@ if Code.ensure_loaded?(Ecto.Repo) do
 
     defp fetch_repo(opts) do
       case Keyword.fetch(opts, :repo) do
-        {:ok, repo} when is_atom(repo) -> {:ok, repo}
-        _missing -> {:error, {:missing_option, :repo}}
+        {:ok, repo} when is_atom(repo) and repo not in [nil, true, false] ->
+          if Code.ensure_loaded?(repo), do: {:ok, repo}, else: {:error, {:invalid_option, :repo, repo}}
+
+        {:ok, repo} ->
+          {:error, {:invalid_option, :repo, repo}}
+
+        :error ->
+          {:error, {:missing_option, :repo}}
+      end
+    end
+
+    # `:config` selects dynamic mode; without it the repo module is the pool.
+    defp fetch_mode(opts) do
+      case Keyword.fetch(opts, :config) do
+        {:ok, config} ->
+          if Keyword.keyword?(config), do: {:ok, {:dynamic, config}}, else: {:error, {:invalid_option, :config, config}}
+
+        :error ->
+          {:ok, :module}
       end
     end
   end
