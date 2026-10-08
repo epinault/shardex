@@ -39,3 +39,36 @@ for %{shard: shard, mode: mode} <- MyApp.Metadata.shards_in_maintenance() do
   MyApp.Shards.maintenance(shard, mode)
 end
 ```
+
+The Coordinator can also restart on its own after a crash. It then rebuilds
+from the boot config: drained or stopped shards come back `:active` and shards
+added or removed at runtime are reverted. Shardex emits
+`[:shardex, :coordinator, :init]` after every successful boot, so attach a
+handler that re-applies your source of truth. The handler runs inside the
+Coordinator while it boots, so do the work in another process:
+
+```elixir
+defmodule MyApp.ShardexReapply do
+  def attach do
+    :telemetry.attach("myapp-shardex-reapply", [:shardex, :coordinator, :init], &__MODULE__.handle/4, nil)
+  end
+
+  def handle(_event, _measurements, %{instance: MyApp.Shards}, _config) do
+    Task.Supervisor.start_child(MyApp.TaskSupervisor, fn ->
+      for %{shard: shard, mode: mode} <- MyApp.Metadata.shards_in_maintenance() do
+        MyApp.Shards.maintenance(shard, mode)
+      end
+    end)
+  end
+
+  def handle(_event, _measurements, _metadata, _config), do: :ok
+end
+```
+
+Call `MyApp.ShardexReapply.attach()` before the instance starts (e.g. in
+`Application.start/2`) so it also covers the initial boot.
+
+A pool that keeps failing to start also affects restarts: if the Coordinator
+crashes and cannot rebuild (with `start_failure: :raise`, any boot-config pool
+failing to start stops it), the instance supervisor keeps restarting it until
+its restart intensity is exhausted, and then the whole instance goes down.

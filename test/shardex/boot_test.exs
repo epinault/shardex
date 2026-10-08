@@ -14,6 +14,17 @@ defmodule Shardex.BootTest do
     for {id, pid, _type, _mods} <- Supervisor.which_children(Names.pool_sup(i)), is_pid(pid), do: id
   end
 
+  test "emits [:shardex, :coordinator, :init] on boot and after a coordinator restart", %{instance: i} do
+    attach_telemetry([[:shardex, :coordinator, :init]])
+    start_supervised!({Shardex, name: i, shards: [s1: agent_pool(i, :s1)]})
+    assert_receive {:telemetry, [:shardex, :coordinator, :init], %{}, %{instance: ^i, version: 1}}
+
+    coordinator = Process.whereis(Names.coordinator(i))
+    Process.exit(coordinator, :kill)
+    assert_receive {:telemetry, [:shardex, :coordinator, :init], %{}, %{instance: ^i, version: 1}}
+    assert Process.whereis(Names.coordinator(i)) != coordinator
+  end
+
   test "boots, starts one pool per {shard, role} and writes the topology", %{instance: i} do
     start_supervised!(
       {Shardex,

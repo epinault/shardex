@@ -43,14 +43,17 @@ defmodule Shardex.Coordinator do
          {:ok, shards} <- map_ok(shards, &boot_shard(&1, state, config.start_failure)) do
       Enum.each(shards, &State.put_shard(instance, &1))
 
-      State.put_topology(instance, %Topology{
+      topology = %Topology{
         shards: names,
         active: for(shard <- shards, shard.status == :active, do: shard.name),
         strategy: strategy,
         strategy_opts: strategy_opts,
         strategy_state: strategy_state
-      })
+      }
 
+      State.put_topology(instance, topology)
+      # Also fires after a crash restart, which rebuilds from the boot config.
+      Telemetry.execute([:coordinator, :init], %{}, %{instance: instance, version: topology.version})
       {:ok, state}
     else
       {:error, reason} -> {:stop, reason}

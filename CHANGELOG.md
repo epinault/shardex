@@ -15,4 +15,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batching with `group/4` and `run_batch/5`.
 - Maintenance (`:drain`, `:stop`), `activate`, `status`, `shards`.
 - Runtime `add_shard` / `remove_shard`.
-- Telemetry events under `[:shardex, ...]`.
+- Telemetry events under `[:shardex, ...]`, including `[:shardex, :coordinator, :init]` to
+  re-apply runtime state after a Coordinator restart.

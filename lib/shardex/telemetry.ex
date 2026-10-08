@@ -13,6 +13,9 @@ defmodule Shardex.Telemetry do
       whole shard), `:from`, `:to`.
     * `[:shardex, :topology, :changed]` - Metadata: `:action` (`:add | :remove`), `:shard`,
       `:version`.
+    * `[:shardex, :coordinator, :init]` - the Coordinator finished booting, at instance start
+      and again after a crash restart (which rebuilds state from the boot config, dropping
+      runtime changes). Measurements: `%{}`. Metadata: `:version` (always `1`).
   """
 
   @doc false
