@@ -30,6 +30,11 @@ jobs:
       - run: mix deps.get
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
+      # In :test, ecto_sql pulls in ecto, so check the optional-deps-free build in :prod.
+      - name: Compile without optional deps
+        run: mix compile --no-optional-deps --warnings-as-errors
+        env:
+          MIX_ENV: prod
       - run: mix credo --strict
       - run: mix test
 
@@ -50,3 +55,4 @@ jobs:
           key: ${{ runner.os }}-dialyzer-${{ hashFiles('mix.lock') }}
       - run: mix deps.get
       - run: mix dialyzer
+      - run: mix docs
