@@ -157,4 +157,27 @@ defmodule Shardex do
   def child_spec(opts) do
     %{id: Keyword.get(opts, :name, __MODULE__), start: {__MODULE__, :start_link, [opts]}, type: :supervisor}
   end
+
+  @doc """
+  Adds a shard at runtime: initializes its adapters, starts its pools, then
+  makes it routable (or leaves it drained with `status: :drain`).
+
+  Runtime changes are kept in memory only; after a restart the boot config wins.
+  With `Shardex.Strategy.Hash` most keys remap; with `JumpHash` ~1/n keys move
+  to the new shard.
+  """
+  @spec add_shard(instance(), atom(), term(), keyword()) :: :ok | {:error, term()}
+  def add_shard(instance, name, spec, opts \\ []) when is_atom(name) do
+    status = Keyword.get(opts, :status, :active)
+
+    if status not in [:active, :drain] do
+      raise ArgumentError, "expected :status to be :active or :drain, got: #{inspect(status)}"
+    end
+
+    Coordinator.call(instance, {:add_shard, name, spec, status})
+  end
+
+  @doc "Removes a shard at runtime: unroutes it, stops its pools and drops it from the strategy."
+  @spec remove_shard(instance(), atom()) :: :ok | {:error, {:unknown_shard, atom()} | :last_shard}
+  def remove_shard(instance, name), do: Coordinator.call(instance, {:remove_shard, name})
 end

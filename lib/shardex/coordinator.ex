@@ -5,6 +5,7 @@ defmodule Shardex.Coordinator do
   use GenServer
 
   alias Shardex.Adapter
+  alias Shardex.Config
   alias Shardex.Names
   alias Shardex.Pool
   alias Shardex.Shard
@@ -14,6 +15,8 @@ defmodule Shardex.Coordinator do
   alias Shardex.Topology
 
   require Logger
+
+  @remapping_strategies [Shardex.Strategy.Hash, Shardex.Strategy.JumpHash]
 
   @spec start_link(map()) :: GenServer.on_start()
   def start_link(config), do: GenServer.start_link(__MODULE__, config, name: Names.coordinator(config.name))
@@ -63,6 +66,14 @@ defmodule Shardex.Coordinator do
       end
 
     {:reply, reply, state}
+  end
+
+  def handle_call({:add_shard, name, spec, status}, _from, state) do
+    {:reply, add_shard(state, name, spec, status), state}
+  end
+
+  def handle_call({:remove_shard, name}, _from, state) do
+    {:reply, remove_shard(state, name), state}
   end
 
   ## Status transitions
@@ -245,4 +256,94 @@ defmodule Shardex.Coordinator do
       error -> error
     end
   end
+
+  ## Topology changes
+
+  defp add_shard(state, name, spec, status) do
+    with :ok <- ensure_new(state.instance, name),
+         {:ok, roles} <- normalize_roles(name, spec),
+         {:ok, shard} <- build_shard(state.instance, name, roles),
+         shard = %{shard | status: status},
+         :ok <- start_new_shard(shard, state) do
+      State.put_shard(state.instance, shard)
+      change_shard_list(state, &(&1 ++ [name]), :add, name)
+    end
+  end
+
+  defp remove_shard(state, name) do
+    with {:ok, shard} <- fetch(state.instance, name),
+         :ok <- ensure_not_last(State.topology!(state.instance), name) do
+      stopped = %{shard | status: :stopped}
+      commit(state, stopped)
+      :ok = sync_pools(stopped, state)
+      State.delete_shard(state.instance, name)
+      change_shard_list(state, &List.delete(&1, name), :remove, name)
+    end
+  end
+
+  defp ensure_new(instance, name) do
+    case State.fetch_shard(instance, name) do
+      :error -> :ok
+      {:ok, _shard} -> {:error, :already_exists}
+    end
+  end
+
+  defp ensure_not_last(%Topology{shards: [name]}, name), do: {:error, :last_shard}
+  defp ensure_not_last(_topology, _name), do: :ok
+
+  defp normalize_roles(name, spec) do
+    case Config.normalize_roles(name, spec) do
+      {:ok, roles} -> {:ok, roles}
+      {:error, message} -> {:error, {:invalid_shard_spec, message}}
+    end
+  end
+
+  defp start_new_shard(shard, state) do
+    case sync_pools(shard, state) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        :ok = sync_pools(%{shard | status: :stopped}, state)
+        {:error, reason}
+    end
+  end
+
+  defp change_shard_list(state, update, action, name) do
+    topology = State.topology!(state.instance)
+    names = update.(topology.shards)
+
+    {:ok, strategy_state} =
+      Strategy.on_topology_change(topology.strategy, topology.strategy_state, topology.strategy_opts, names)
+
+    version = topology.version + 1
+
+    State.put_topology(state.instance, %{
+      topology
+      | shards: names,
+        active: active_names(state.instance, names),
+        strategy_state: strategy_state,
+        version: version
+    })
+
+    warn_remap(state.instance, topology.strategy, action, name)
+
+    Telemetry.execute([:topology, :changed], %{}, %{
+      instance: state.instance,
+      action: action,
+      shard: name,
+      version: version
+    })
+
+    :ok
+  end
+
+  defp warn_remap(instance, strategy, action, name) when strategy in @remapping_strategies do
+    Logger.warning(
+      "[Shardex] #{inspect(instance)}: #{action} of shard #{inspect(name)} changes the shard count; " <>
+        "keys routed by #{inspect(strategy)} will remap"
+    )
+  end
+
+  defp warn_remap(_instance, _strategy, _action, _name), do: :ok
 end
