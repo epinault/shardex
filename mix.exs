@@ -12,6 +12,7 @@ defmodule Shardex.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       description: "Route keys and batches to sharded pools: Ecto, Redis, Elasticsearch or anything with a child spec.",
       package: package(),
       docs: docs(),
@@ -43,6 +44,18 @@ defmodule Shardex.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:styler, "~> 1.12", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp aliases do
+    [
+      precommit: [
+        "deps.unlock --check-unused",
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "test"
+      ]
     ]
   end
 
