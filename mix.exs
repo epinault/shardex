@@ -62,7 +62,11 @@ defmodule Shardex.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => @source_url, "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"},
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md",
+        "Demo" => "https://github.com/epinault/shardex_demo"
+      },
       files: ~w(lib guides mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
