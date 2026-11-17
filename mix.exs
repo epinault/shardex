@@ -12,6 +12,7 @@ defmodule Shardex.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       description: "Route keys and batches to sharded pools: Ecto, Redis, Elasticsearch or anything with a child spec.",
       package: package(),
       docs: docs(),
@@ -46,10 +47,26 @@ defmodule Shardex.MixProject do
     ]
   end
 
+  defp aliases do
+    [
+      precommit: [
+        "deps.unlock --check-unused",
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "test"
+      ]
+    ]
+  end
+
   defp package do
     [
       licenses: ["MIT"],
-      links: %{"GitHub" => @source_url, "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"},
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md",
+        "Demo" => "https://github.com/epinault/shardex_demo"
+      },
       files: ~w(lib guides mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end

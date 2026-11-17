@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-03
+
 ### Added
 
 - `use Shardex` instance modules and the functional `Shardex` API.
@@ -17,3 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime `add_shard` / `remove_shard`.
 - Telemetry events under `[:shardex, ...]`, including `[:shardex, :coordinator, :init]` to
   re-apply runtime state after a Coordinator restart.
+
+[Unreleased]: https://github.com/epinault/shardex/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/epinault/shardex/releases/tag/v0.1.0

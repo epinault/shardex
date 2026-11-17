@@ -71,6 +71,11 @@ MyApp.Shards.run(org_id, &read_report/1, role: :replica, fallback: :primary)
 - [Maintenance & topology](guides/maintenance.md) · [Telemetry](guides/telemetry.md)
 - [Migrating from shardlib](guides/migrating-from-shardlib.md)
 
+## Demo
+
+[epinault/shardex_demo](https://github.com/epinault/shardex_demo) — a Phoenix +
+LiveView app demonstrating tenant-based Postgres sharding with Shardex.
+
 ## License
 
 MIT

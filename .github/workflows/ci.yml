@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "29.1.1"
-          elixir-version: "1.20.4-otp-29"
+          otp-version: "29.1.2"
+          elixir-version: "1.20.5-otp-29"
       - uses: actions/cache@v4
         with:
           path: |
@@ -44,8 +44,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: "29.1.1"
-          elixir-version: "1.20.4-otp-29"
+          otp-version: "29.1.2"
+          elixir-version: "1.20.5-otp-29"
       - uses: actions/cache@v4
         with:
           path: |
